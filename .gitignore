@@ -1,0 +1,10 @@
+# Credentials
+config.ts
+
+# Node
+node_modules/
+*.js
+*.d.ts
+
+# OS
+.DS_Store
