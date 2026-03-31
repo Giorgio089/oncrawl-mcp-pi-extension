@@ -1,0 +1,33 @@
+{
+  "name": "oncrawl-mcp-pi-extension",
+  "version": "1.0.0",
+  "description": "Pi Agent extension that bridges the Oncrawl MCP Server directly into Pi – no Claude Code or Claude Desktop required.",
+  "keywords": [
+    "pi-package",
+    "oncrawl",
+    "seo",
+    "technical-seo",
+    "mcp",
+    "pi-agent",
+    "crawl-analysis"
+  ],
+  "author": "Giorgio089",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Giorgio089/oncrawl-mcp-pi-extension.git"
+  },
+  "homepage": "https://github.com/Giorgio089/oncrawl-mcp-pi-extension#readme",
+  "bugs": {
+    "url": "https://github.com/Giorgio089/oncrawl-mcp-pi-extension/issues"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*",
+    "@sinclair/typebox": "*"
+  }
+}

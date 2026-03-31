@@ -1,0 +1,17 @@
+# Credentials – never publish
+config.ts
+
+# Git
+.git/
+.gitignore
+
+# OS
+.DS_Store
+
+# Node
+node_modules/
+
+# Build artifacts
+*.js
+*.d.ts
+*.map

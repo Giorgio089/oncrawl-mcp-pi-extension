@@ -13,7 +13,18 @@ import { Type } from "@sinclair/typebox";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { createInterface } from "node:readline";
-import { PYTHON_BIN, MODULE, ONCRAWL_API_TOKEN, ONCRAWL_WORKSPACE_ID } from "./config.js";
+// ─── Configuration via Environment Variables ────────────────────────────────
+// Set these in your shell profile (~/.zshrc, ~/.bashrc, etc.)
+//
+//   export ONCRAWL_PYTHON_BIN="/Users/yourname/oncrawl-mcp-server/.venv/bin/python"
+//   export ONCRAWL_API_TOKEN="your-token"
+//   export ONCRAWL_WORKSPACE_ID="your-workspace-id"  # optional
+//   export ONCRAWL_MODULE="oncrawl_mcp_server.server"  # optional, this is the default
+
+const PYTHON_BIN = process.env.ONCRAWL_PYTHON_BIN ?? "";
+const MODULE = process.env.ONCRAWL_MODULE ?? "oncrawl_mcp_server.server";
+const ONCRAWL_API_TOKEN = process.env.ONCRAWL_API_TOKEN ?? "";
+const ONCRAWL_WORKSPACE_ID = process.env.ONCRAWL_WORKSPACE_ID ?? "";
 
 // ─── MCP Client (newline-delimited JSON-RPC over stdio) ──────────────────────
 
@@ -237,6 +248,18 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_start", async (_event, ctx) => {
     if (initialized) return;
+
+    // Validate required env vars
+    const missing: string[] = [];
+    if (!PYTHON_BIN) missing.push("ONCRAWL_PYTHON_BIN");
+    if (!ONCRAWL_API_TOKEN) missing.push("ONCRAWL_API_TOKEN");
+    if (missing.length > 0) {
+      ctx.ui.notify(
+        `Oncrawl MCP: Missing required environment variable(s): ${missing.join(", ")}. See https://github.com/Giorgio089/oncrawl-mcp-pi-extension for setup instructions.`,
+        "error"
+      );
+      return;
+    }
 
     ctx.ui.setStatus("oncrawl", "🔄 Oncrawl MCP starting…");
 

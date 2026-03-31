@@ -2,6 +2,30 @@
 
 A [Pi Agent]((https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent)) extension that bridges the [Oncrawl MCP Server](https://github.com/Amaculus/oncrawl-mcp-server) directly into Pi – no Claude Code / Desktop required.
 
+## Installation
+
+### Via Pi (recommended)
+
+```bash
+pi install npm:oncrawl-mcp-pi-extension
+```
+
+Then set the required environment variables in your shell profile (`~/.zshrc`, `~/.bashrc`, etc.):
+
+```bash
+export ONCRAWL_PYTHON_BIN="/Users/yourname/oncrawl-mcp-server/.venv/bin/python"
+export ONCRAWL_API_TOKEN="your-token-here"
+export ONCRAWL_WORKSPACE_ID="your-workspace-id"   # optional
+```
+
+Restart your shell (or `source ~/.zshrc`), then start Pi. That's it.
+
+### Manual installation
+
+See the [manual setup](#setup) section below.
+
+---
+
 ## What it does
 
 Pi Agent has no native MCP client. This extension fills that gap:
