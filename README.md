@@ -1,6 +1,6 @@
 # Oncrawl MCP Pi Extension
 
-A [Pi Agent](https://github.com/mariozechner/pi-coding-agent) extension that bridges the [Oncrawl MCP Server](https://github.com/Amaculus/oncrawl-mcp-server) directly into Pi – no Claude Code or Claude Desktop required.
+A [Pi Agent]((https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent)) extension that bridges the [Oncrawl MCP Server](https://github.com/Amaculus/oncrawl-mcp-server) directly into Pi – no Claude Code / Desktop required.
 
 ## What it does
 
@@ -123,4 +123,4 @@ oncrawl-mcp-pi-extension/
 ## Credits
 
 - [Oncrawl MCP Server](https://github.com/Amaculus/oncrawl-mcp-server) by Antonio (Amaculus)
-- [Pi Agent](https://github.com/mariozechner/pi-coding-agent) by Mario Zechner
+- [Pi Agent](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent) by Mario Zechner
