@@ -5,6 +5,9 @@ config.ts
 .git/
 .gitignore
 
+# CI
+.github/
+
 # OS
 .DS_Store
 
