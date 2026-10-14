@@ -1,6 +1,6 @@
 {
   "name": "oncrawl-mcp-pi-extension",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Pi Agent extension that bridges the Oncrawl MCP Server directly into Pi – no Claude Code or Claude Desktop required.",
   "keywords": [
     "pi-package",
