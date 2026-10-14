@@ -181,6 +181,15 @@ oncrawl-mcp-pi-extension/
 └── README.md
 ```
 
+## Releasing
+
+New versions are published to npm by GitHub Actions (`.github/workflows/publish.yml`) using [npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers) – no npm token is stored in GitHub.
+
+1. Bump `version` in `package.json` and merge to `main`.
+2. Create a GitHub release with the tag `v<version>` (e.g. `v1.2.0`). The workflow refuses to publish if the tag and `package.json` disagree.
+
+One-time setup on npmjs.com: package **Settings → Trusted Publisher → GitHub Actions** with owner `Giorgio089`, repository `oncrawl-mcp-pi-extension` and workflow `publish.yml`.
+
 ## Credits
 
 - [Oncrawl MCP Server](https://github.com/Amaculus/oncrawl-mcp-server) by Antonio (Amaculus)
