@@ -5,13 +5,22 @@
  * newline-delimited JSON-RPC 2.0 over stdio, and registers every
  * discovered tool as a native Pi custom tool.
  *
- * Setup: copy config.example.ts → config.ts and fill in your credentials.
+ * Setup: configure via environment variables (see below and README).
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import {
+  DEFAULT_MAX_BYTES,
+  DEFAULT_MAX_LINES,
+  formatSize,
+  truncateHead,
+  type ExtensionAPI,
+} from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { EventEmitter } from "node:events";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createInterface } from "node:readline";
 // ─── Configuration via Environment Variables ────────────────────────────────
 // Set these in your shell profile (~/.zshrc, ~/.bashrc, etc.)
@@ -20,11 +29,24 @@ import { createInterface } from "node:readline";
 //   export ONCRAWL_API_TOKEN="your-token"
 //   export ONCRAWL_WORKSPACE_ID="your-workspace-id"  # optional
 //   export ONCRAWL_MODULE="oncrawl_mcp_server.server"  # optional, this is the default
+//   export ONCRAWL_TIMEOUT_MS="120000"       # optional, per-call timeout
+//   export ONCRAWL_LONG_TIMEOUT_MS="600000"  # optional, timeout for export / auto-paginating tools
 
 const PYTHON_BIN = process.env.ONCRAWL_PYTHON_BIN ?? "";
 const MODULE = process.env.ONCRAWL_MODULE ?? "oncrawl_mcp_server.server";
 const ONCRAWL_API_TOKEN = process.env.ONCRAWL_API_TOKEN ?? "";
 const ONCRAWL_WORKSPACE_ID = process.env.ONCRAWL_WORKSPACE_ID ?? "";
+
+function envMs(name: string, fallback: number): number {
+  const v = Number(process.env[name]);
+  return Number.isFinite(v) && v > 0 ? v : fallback;
+}
+
+const TIMEOUT_MS = envMs("ONCRAWL_TIMEOUT_MS", 120_000);
+// Exports and auto-paginating searches can run for minutes (upstream export
+// itself allows 300 s per HTTP request), so they get a longer budget.
+const LONG_TIMEOUT_MS = envMs("ONCRAWL_LONG_TIMEOUT_MS", 600_000);
+const LONG_RUNNING_TOOL = /^oncrawl_(export_|search_all_)/;
 
 // ─── MCP Client (newline-delimited JSON-RPC over stdio) ──────────────────────
 
@@ -129,23 +151,39 @@ class McpStdioClient extends EventEmitter {
     this.proc.stdin.write(JSON.stringify(obj) + "\n");
   }
 
-  private request(method: string, params?: unknown): Promise<unknown> {
+  private request(
+    method: string,
+    params?: unknown,
+    timeoutMs: number = TIMEOUT_MS
+  ): Promise<unknown> {
     return new Promise((resolve, reject) => {
       if (!this.proc) {
         reject(new Error("MCP server not running"));
         return;
       }
       const id = this.nextId++;
-      this.pendingRequests.set(id, { resolve, reject });
-      this.sendLine({ jsonrpc: "2.0", id, method, params });
-
-      // 120 s timeout – large Oncrawl exports can be slow
-      setTimeout(() => {
-        if (this.pendingRequests.has(id)) {
-          this.pendingRequests.delete(id);
-          reject(new Error(`MCP request timeout: ${method}`));
+      const timer = setTimeout(() => {
+        if (this.pendingRequests.delete(id)) {
+          reject(
+            new Error(
+              `MCP request timeout after ${Math.round(timeoutMs / 1000)} s: ${method}`
+            )
+          );
         }
-      }, 120_000);
+      }, timeoutMs);
+      timer.unref();
+
+      this.pendingRequests.set(id, {
+        resolve: (v) => {
+          clearTimeout(timer);
+          resolve(v);
+        },
+        reject: (e) => {
+          clearTimeout(timer);
+          reject(e);
+        },
+      });
+      this.sendLine({ jsonrpc: "2.0", id, method, params });
     });
   }
 
@@ -165,15 +203,24 @@ class McpStdioClient extends EventEmitter {
   }
 
   async callTool(name: string, args: Record<string, unknown>): Promise<string> {
-    const result = (await this.request("tools/call", {
-      name,
-      arguments: args,
-    })) as { content?: Array<{ type: string; text?: string }> };
+    const result = (await this.request(
+      "tools/call",
+      { name, arguments: args },
+      LONG_RUNNING_TOOL.test(name) ? LONG_TIMEOUT_MS : TIMEOUT_MS
+    )) as { content?: Array<{ type: string; text?: string }>; isError?: boolean };
 
-    return (result?.content ?? [])
+    const text = (result?.content ?? [])
       .filter((p) => p.type === "text")
       .map((p) => p.text ?? "")
       .join("\n");
+
+    // The upstream server reports failures as plain text ("Error: …",
+    // "Unknown tool: …") without isError, so check both. Throwing makes Pi
+    // mark the tool call as failed.
+    if (result?.isError || /^(Error:|Unknown tool:)/.test(text)) {
+      throw new Error(text || `Oncrawl tool ${name} failed`);
+    }
+    return text;
   }
 }
 
@@ -233,6 +280,45 @@ function buildTypeBoxSchema(inputSchema: McpTool["inputSchema"]) {
   return Type.Object(props as never);
 }
 
+// ─── Output Truncation ────────────────────────────────────────────────────────
+// Pi requires tools to keep output within DEFAULT_MAX_BYTES / DEFAULT_MAX_LINES.
+// The full result is saved to a temp file so the model can read it on demand.
+
+function truncateOutput(toolName: string, output: string): string {
+  if (Buffer.byteLength(output) <= DEFAULT_MAX_BYTES) return output;
+
+  // Upstream returns compact single-line JSON; pretty-print it so it can be
+  // cut at line boundaries instead of being dropped entirely.
+  let full = output;
+  let isJson = false;
+  try {
+    full = JSON.stringify(JSON.parse(output), null, 1);
+    isJson = true;
+  } catch {
+    // not JSON – keep as is
+  }
+
+  const dir = join(tmpdir(), "oncrawl-mcp");
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, `${toolName}-${Date.now()}.${isJson ? "json" : "txt"}`);
+  writeFileSync(file, full);
+
+  const t = truncateHead(full, {
+    maxLines: DEFAULT_MAX_LINES,
+    maxBytes: DEFAULT_MAX_BYTES,
+  });
+  const head = t.firstLineExceedsLimit
+    ? full.slice(0, DEFAULT_MAX_BYTES)
+    : t.content;
+
+  return (
+    `${head}\n\n[Output truncated: showing ${formatSize(Buffer.byteLength(head))} ` +
+    `of ${formatSize(t.totalBytes)} (${t.totalLines} lines). ` +
+    `Full output saved to: ${file} – read or query it (e.g. with jq) for the rest, ` +
+    `or narrow the request with OQL filters, fewer fields or a lower limit.]`
+  );
+}
+
 function toolLabel(name: string): string {
   return name
     .replace(/^oncrawl_/, "")
@@ -273,12 +359,15 @@ export default function (pi: ExtensionAPI) {
         pi.registerTool({
           name: tool.name,
           label: `Oncrawl: ${toolLabel(tool.name)}`,
-          description: tool.description ?? tool.name,
+          description:
+            (tool.description ?? tool.name) +
+            `\n\nOutput over ${formatSize(DEFAULT_MAX_BYTES)} is truncated; the full result is saved to a temp file whose path is included in the output.`,
           parameters: schema,
 
           async execute(_toolCallId, params, _signal, onUpdate) {
             onUpdate?.({
               content: [{ type: "text", text: `⏳ Oncrawl API call running (${tool.name})…` }],
+              details: { tool: tool.name },
             });
 
             const args = params as Record<string, unknown>;
@@ -288,7 +377,7 @@ export default function (pi: ExtensionAPI) {
 
             const result = await client.callTool(tool.name, cleanArgs);
             return {
-              content: [{ type: "text", text: result }],
+              content: [{ type: "text", text: truncateOutput(tool.name, result) }],
               details: { tool: tool.name, args: cleanArgs },
             };
           },

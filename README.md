@@ -1,6 +1,6 @@
 # Oncrawl MCP Pi Extension
 
-A [Pi Agent]((https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent)) extension that bridges the [Oncrawl MCP Server](https://github.com/Amaculus/oncrawl-mcp-server) directly into Pi – no Claude Code / Desktop required.
+A [Pi Agent](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent) extension that bridges the [Oncrawl MCP Server](https://github.com/Amaculus/oncrawl-mcp-server) directly into Pi – no Claude Code / Desktop required.
 
 ## Installation
 
@@ -18,6 +18,13 @@ export ONCRAWL_API_TOKEN="your-token-here"
 export ONCRAWL_WORKSPACE_ID="your-workspace-id"   # optional
 ```
 
+Optional tuning:
+
+```bash
+export ONCRAWL_TIMEOUT_MS="120000"        # per-call timeout (default 120 s)
+export ONCRAWL_LONG_TIMEOUT_MS="600000"   # oncrawl_export_* / oncrawl_search_all_* (default 600 s)
+```
+
 Restart your shell (or `source ~/.zshrc`), then start Pi. That's it.
 
 ### Manual installation
@@ -33,7 +40,9 @@ Pi Agent has no native MCP client. This extension fills that gap:
 1. **Spawns** the Oncrawl Python MCP server as a subprocess on session start
 2. **Implements** the MCP stdio protocol (newline-delimited JSON-RPC 2.0) in TypeScript
 3. **Auto-discovers** all tools exposed by the server and registers them as native Pi tools
-4. **Cleans up** the subprocess on session shutdown
+4. **Truncates** large results to Pi's output limit (50 KB / 2000 lines) and saves the full result to a temp file (`$TMPDIR/oncrawl-mcp/`), whose path is shown to the model
+5. **Reports errors** from the Oncrawl API as failed tool calls, so the model sees them as errors
+6. **Cleans up** the subprocess on session shutdown
 
 All **21 Oncrawl tools** become available directly in Pi, including:
 
@@ -52,9 +61,9 @@ All **21 Oncrawl tools** become available directly in Pi, including:
 
 ## Requirements
 
-- [Pi Agent](https://github.com/mariozechner/pi-coding-agent) installed
+- [Pi Agent](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent) installed
 - Python 3.11+ with the [oncrawl-mcp-server](https://github.com/Amaculus/oncrawl-mcp-server) installed in a venv
-- An Oncrawl account with API access (`project:read` scope is sufficient)
+- An Oncrawl account with API access (`projects:read` scope is sufficient)
 
 ## Setup
 
@@ -70,17 +79,13 @@ pip install -e .
 
 ### 2. Configure credentials
 
+Authentication uses an Oncrawl API token. Add these to your shell profile (`~/.zshrc`, `~/.bashrc`, etc.):
+
 ```bash
-cp config.example.ts config.ts
-```
-
-Edit `config.ts`:
-
-```ts
-export const PYTHON_BIN = "/Users/yourname/oncrawl-mcp-server/.venv/bin/python";
-export const MODULE = "oncrawl_mcp_server.server";
-export const ONCRAWL_API_TOKEN = "your-token-here";
-export const ONCRAWL_WORKSPACE_ID = "your-workspace-id-here";
+export ONCRAWL_PYTHON_BIN="/Users/yourname/oncrawl-mcp-server/.venv/bin/python"
+export ONCRAWL_API_TOKEN="your-token-here"
+export ONCRAWL_WORKSPACE_ID="your-workspace-id-here"    # optional
+export ONCRAWL_MODULE="oncrawl_mcp_server.server"       # optional, this is the default
 ```
 
 **Find your Workspace ID** in the Oncrawl URL:
@@ -92,7 +97,7 @@ export const ONCRAWL_WORKSPACE_ID = "your-workspace-id-here";
 
 ```bash
 mkdir -p ~/.pi/agent/extensions/oncrawl-mcp
-cp index.ts config.ts ~/.pi/agent/extensions/oncrawl-mcp/
+cp index.ts ~/.pi/agent/extensions/oncrawl-mcp/
 ```
 
 ### 4. Start Pi
@@ -124,7 +129,7 @@ The extension loads automatically on every session start. You'll see a status in
 
 ## How it works
 
-The MCP stdio protocol used by this server is **newline-delimited JSON-RPC 2.0** (not the Content-Length framing described in some MCP specs). Each message is a single JSON object terminated by `\n`.
+The MCP stdio transport uses **newline-delimited JSON-RPC 2.0** (not the Content-Length framing known from LSP). Each message is a single JSON object terminated by `\n`.
 
 The handshake sequence:
 1. Send `initialize` → receive server capabilities
@@ -139,8 +144,7 @@ TypeBox schemas are built dynamically from each tool's `inputSchema`, so new too
 ```
 oncrawl-mcp-pi-extension/
 ├── index.ts          # Extension entry point (Pi loads this)
-├── config.ts         # Your credentials (git-ignored)
-├── config.example.ts # Template – commit this, not config.ts
+├── package.json
 └── README.md
 ```
 
