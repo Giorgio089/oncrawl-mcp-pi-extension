@@ -391,7 +391,7 @@ class McpClient {
       {
         protocolVersion: this.transport.protocolVersion,
         capabilities: {},
-        clientInfo: { name: "pi-agent", version: "1.0.0" },
+        clientInfo: { name: "oncrawl-mcp-pi-extension", version: "1.1.0" },
       },
       {}
     )) as { protocolVersion?: string };
